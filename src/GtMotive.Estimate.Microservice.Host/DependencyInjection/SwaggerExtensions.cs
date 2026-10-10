@@ -1,8 +1,5 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Reflection;
-using GtMotive.Estimate.Microservice.Host.Configuration;
-using GtMotive.Estimate.Microservice.Host.Infrastructure.Swagger;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,10 +13,7 @@ namespace GtMotive.Estimate.Microservice.Host.DependencyInjection
 
         private static string AssemblyVersion => Assembly.GetEntryAssembly().GetName().Version.ToString();
 
-        public static IServiceCollection AddSwagger(
-            this IServiceCollection services,
-            AppSettings settings,
-            IConfiguration configuration)
+        public static IServiceCollection AddSwagger(this IServiceCollection services)
         {
             // Register the Swagger generator, defining 1 or more Swagger documents
             services.AddSwaggerGen(
@@ -31,42 +25,6 @@ namespace GtMotive.Estimate.Microservice.Host.DependencyInjection
                         Title = $"{AssemblyName} API",
                         Version = $"v{AssemblyVersion}",
                     });
-
-                    if (configuration.GetValue<string>("Swagger:EnableTryIt") == "Yes")
-                    {
-                        // Define the OAuth2.0 scheme that's in use (i.e. Implicit Flow)
-                        options.AddSecurityDefinition("oauth2", new OpenApiSecurityScheme
-                        {
-                            Type = SecuritySchemeType.OAuth2,
-                            Name = "oauth2",
-                            Flows = configuration.GetValue<string>("Swagger:AuthFlow") == "AuthorizationCode"
-                                ? new OpenApiOAuthFlows
-                                {
-                                    AuthorizationCode = new OpenApiOAuthFlow
-                                    {
-                                        AuthorizationUrl = new Uri($"{settings.JwtAuthority}/connect/authorize"),
-                                        Scopes = new Dictionary<string, string>
-                                        {
-                                            ["estimate-public-scope"] = "estimate-api"
-                                        },
-                                        TokenUrl = new Uri($"{settings.JwtAuthority}/connect/token")
-                                    }
-                                }
-                                : new OpenApiOAuthFlows()
-                                {
-                                    ClientCredentials = new OpenApiOAuthFlow()
-                                    {
-                                        Scopes = new Dictionary<string, string>
-                                        {
-                                            ["estimate-public-scope"] = "estimate-api"
-                                        },
-                                        TokenUrl = new Uri($"{settings.JwtAuthority}/connect/token")
-                                    }
-                                }
-                        });
-
-                        options.OperationFilter<IdentityServerApiSecurityOperationFilter>();
-                    }
                 });
 
             return services;
@@ -114,10 +72,6 @@ namespace GtMotive.Estimate.Microservice.Host.DependencyInjection
                     {
                         options.SupportedSubmitMethods();
                     }
-
-                    options.OAuthClientId("client-gtestimate-swagger");
-                    options.OAuthClientSecret("gtmotive");
-                    options.OAuthScopeSeparator(" ");
                 });
 
             return app;

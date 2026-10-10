@@ -1,16 +1,8 @@
 ﻿{
-  "Logging": {
-    "ApplicationInsights": {
-      "LogLevel": {
-        "Default": "None"
-      }
-    }
-  },
   "Serilog": {
     "Using": [
       "Serilog.Expressions",
-      "SeriLog.Sinks.Console",
-      "Serilog.Sinks.ApplicationInsights"
+      "SeriLog.Sinks.Console"
     ],
     "MinimumLevel": {
       "Default": "Debug",

@@ -45,6 +45,8 @@ namespace GtMotive.Estimate.Microservice.Infrastructure
             ArgumentNullException.ThrowIfNull(builder);
 
             builder.Services.AddSingleton<MongoService>();
+            builder.Services.AddScoped<MongoUnitOfWork>();
+            builder.Services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<MongoUnitOfWork>());
             builder.Services.AddScoped<IVehicleRepository, VehicleRepository>();
             builder.Services.AddScoped<IRentalRepository, RentalRepository>();
 

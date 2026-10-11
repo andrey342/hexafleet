@@ -5,18 +5,35 @@ using System.Threading.Tasks;
 using GtMotive.Estimate.Microservice.Domain.Rentals;
 using GtMotive.Estimate.Microservice.Domain.Vehicles;
 using GtMotive.Estimate.Microservice.Infrastructure.MongoDb.Documents;
+using GtMotive.Estimate.Microservice.Infrastructure.MongoDb.Indexes;
 using GtMotive.Estimate.Microservice.Infrastructure.MongoDb.Mappings;
 using MongoDB.Driver;
 
 namespace GtMotive.Estimate.Microservice.Infrastructure.MongoDb.Repositories
 {
-    public sealed class RentalRepository(MongoService mongoService) : IRentalRepository
+    public sealed class RentalRepository(MongoService mongoService, MongoUnitOfWork unitOfWork) : IRentalRepository
     {
         private readonly IMongoCollection<RentalDocument> _rentals = mongoService.Database.GetCollection<RentalDocument>(CollectionNames.Rentals);
+        private readonly MongoUnitOfWork _unitOfWork = unitOfWork;
 
         public async Task Add(Rental rental)
         {
-            await _rentals.InsertOneAsync(RentalMapper.ToDocument(rental));
+            ArgumentNullException.ThrowIfNull(rental);
+
+            var session = await _unitOfWork.GetSessionForWrite();
+
+            try
+            {
+                await _rentals.InsertOneAsync(session, RentalMapper.ToDocument(rental));
+            }
+            catch (MongoWriteException ex) when (MongoIndexes.IsDuplicateKey(ex, MongoIndexes.ActiveRentalByCustomer))
+            {
+                throw new CustomerAlreadyHasRentalException($"The customer {rental.CustomerId} already has an active rental.", ex);
+            }
+            catch (MongoWriteException ex) when (MongoIndexes.IsDuplicateKey(ex, MongoIndexes.ActiveRentalByVehicle))
+            {
+                throw new VehicleNotAvailableException($"The vehicle {rental.VehicleId} is already rented.", ex);
+            }
         }
 
         public async Task<Rental> GetById(RentalId rentalId)
@@ -54,9 +71,10 @@ namespace GtMotive.Estimate.Microservice.Infrastructure.MongoDb.Repositories
             ArgumentNullException.ThrowIfNull(rental);
 
             var id = rental.Id.ToGuid();
+            var session = await _unitOfWork.GetSessionForWrite();
 
             // Only an active rental can change, so a concurrent return makes this match nothing.
-            var result = await _rentals.ReplaceOneAsync(r => r.Id == id && r.ReturnedAt == null, RentalMapper.ToDocument(rental));
+            var result = await _rentals.ReplaceOneAsync(session, r => r.Id == id && r.ReturnedAt == null, RentalMapper.ToDocument(rental));
 
             if (result.MatchedCount == 0)
             {

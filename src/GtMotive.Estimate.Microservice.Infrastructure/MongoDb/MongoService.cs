@@ -1,4 +1,5 @@
 ﻿using GtMotive.Estimate.Microservice.Infrastructure.MongoDb.Documents;
+using GtMotive.Estimate.Microservice.Infrastructure.MongoDb.Indexes;
 using GtMotive.Estimate.Microservice.Infrastructure.MongoDb.Settings;
 using Microsoft.Extensions.Options;
 using MongoDB.Bson;
@@ -20,6 +21,8 @@ namespace GtMotive.Estimate.Microservice.Infrastructure.MongoDb
         {
             MongoClient = new MongoClient(options.Value.ConnectionString);
             Database = MongoClient.GetDatabase(options.Value.MongoDbDatabaseName);
+
+            MongoIndexes.Create(Database);
         }
 
         public MongoClient MongoClient { get; }

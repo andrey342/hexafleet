@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Threading.Tasks;
 using GtMotive.Estimate.Microservice.ApplicationCore.UseCases.RentVehicle;
+using GtMotive.Estimate.Microservice.Domain;
 using GtMotive.Estimate.Microservice.Domain.Interfaces;
 using GtMotive.Estimate.Microservice.Domain.Rentals;
 using GtMotive.Estimate.Microservice.Domain.Vehicles;
@@ -98,6 +99,21 @@ namespace GtMotive.Estimate.Microservice.UnitTests.ApplicationCore.RentVehicle
             await _useCase.Execute(new RentVehicleInput(vehicle.Id, Customer));
 
             _outputPort.Verify(p => p.UnprocessableHandle(It.IsAny<string>()), Times.Once);
+            _outputPort.VerifyNoOtherCalls();
+            _unitOfWork.Verify(u => u.Save(), Times.Never);
+        }
+
+        [Fact]
+        public async Task Execute_reports_a_conflict_and_does_not_save_when_another_request_writes_at_the_same_time()
+        {
+            var vehicle = AVehicleInTheRepository(new DateTime(2023, 5, 1, 0, 0, 0, DateTimeKind.Utc));
+            var rental = new Rental(RentalId.New(), vehicle.Id, Customer, Now, null);
+            _rentalFactory.Setup(f => f.NewRental(vehicle.Id, Customer, Now)).Returns(rental);
+            _rentalRepository.Setup(r => r.Add(rental)).ThrowsAsync(new ConcurrencyConflictException("Retry the request."));
+
+            await _useCase.Execute(new RentVehicleInput(vehicle.Id, Customer));
+
+            _outputPort.Verify(p => p.ConflictHandle("Retry the request."), Times.Once);
             _outputPort.VerifyNoOtherCalls();
             _unitOfWork.Verify(u => u.Save(), Times.Never);
         }

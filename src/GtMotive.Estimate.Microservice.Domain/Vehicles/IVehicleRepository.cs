@@ -15,6 +15,7 @@ namespace GtMotive.Estimate.Microservice.Domain.Vehicles
         /// <param name="vehicle">Vehicle to add.</param>
         /// <returns>Task.</returns>
         /// <exception cref="LicensePlateAlreadyRegisteredException">Another vehicle has the same license plate.</exception>
+        /// <exception cref="ConcurrencyConflictException">Another request is registering the same license plate.</exception>
         Task Add(Vehicle vehicle);
 
         /// <summary>

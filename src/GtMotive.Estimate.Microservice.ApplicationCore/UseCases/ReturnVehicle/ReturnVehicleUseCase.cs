@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
+using GtMotive.Estimate.Microservice.Domain;
 using GtMotive.Estimate.Microservice.Domain.Interfaces;
 using GtMotive.Estimate.Microservice.Domain.Rentals;
 
@@ -48,6 +49,10 @@ namespace GtMotive.Estimate.Microservice.ApplicationCore.UseCases.ReturnVehicle
             catch (RentalAlreadyReturnedException returnedEx)
             {
                 _outputPort.ConflictHandle(returnedEx.Message);
+            }
+            catch (ConcurrencyConflictException concurrencyEx)
+            {
+                _outputPort.ConflictHandle(concurrencyEx.Message);
             }
         }
     }

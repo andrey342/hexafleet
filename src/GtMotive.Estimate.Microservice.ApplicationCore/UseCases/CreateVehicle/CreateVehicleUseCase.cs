@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
+using GtMotive.Estimate.Microservice.Domain;
 using GtMotive.Estimate.Microservice.Domain.Interfaces;
 using GtMotive.Estimate.Microservice.Domain.Vehicles;
 
@@ -58,6 +59,10 @@ namespace GtMotive.Estimate.Microservice.ApplicationCore.UseCases.CreateVehicle
             catch (LicensePlateAlreadyRegisteredException duplicatedEx)
             {
                 _outputPort.ConflictHandle(duplicatedEx.Message);
+            }
+            catch (ConcurrencyConflictException concurrencyEx)
+            {
+                _outputPort.ConflictHandle(concurrencyEx.Message);
             }
         }
     }

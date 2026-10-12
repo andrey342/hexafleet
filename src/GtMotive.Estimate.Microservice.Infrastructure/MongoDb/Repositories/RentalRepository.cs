@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq.Expressions;
 using System.Threading.Tasks;
+using GtMotive.Estimate.Microservice.Domain;
 using GtMotive.Estimate.Microservice.Domain.Rentals;
 using GtMotive.Estimate.Microservice.Domain.Vehicles;
 using GtMotive.Estimate.Microservice.Infrastructure.MongoDb.Documents;
@@ -33,6 +34,10 @@ namespace GtMotive.Estimate.Microservice.Infrastructure.MongoDb.Repositories
             catch (MongoWriteException ex) when (MongoIndexes.IsDuplicateKey(ex, MongoIndexes.ActiveRentalByVehicle))
             {
                 throw new VehicleNotAvailableException($"The vehicle {rental.VehicleId} is already rented.", ex);
+            }
+            catch (MongoException ex) when (MongoUnitOfWork.IsWriteConflict(ex))
+            {
+                throw new ConcurrencyConflictException($"The vehicle {rental.VehicleId} or the customer {rental.CustomerId} is being rented by another request. Retry the request.", ex);
             }
         }
 
@@ -73,8 +78,18 @@ namespace GtMotive.Estimate.Microservice.Infrastructure.MongoDb.Repositories
             var id = rental.Id.ToGuid();
             var session = await _unitOfWork.GetSessionForWrite();
 
-            // Only an active rental can change, so a concurrent return makes this match nothing.
-            var result = await _rentals.ReplaceOneAsync(session, r => r.Id == id && r.ReturnedAt == null, RentalMapper.ToDocument(rental));
+            // Only an active rental can change: a return committed earlier makes this match nothing,
+            // one still in progress makes MongoDB report a write conflict.
+            ReplaceOneResult result;
+
+            try
+            {
+                result = await _rentals.ReplaceOneAsync(session, r => r.Id == id && r.ReturnedAt == null, RentalMapper.ToDocument(rental));
+            }
+            catch (MongoException ex) when (MongoUnitOfWork.IsWriteConflict(ex))
+            {
+                throw new ConcurrencyConflictException($"The rental {rental.Id} is being returned by another request. Retry the request.", ex);
+            }
 
             if (result.MatchedCount == 0)
             {

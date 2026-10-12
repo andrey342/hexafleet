@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
+using GtMotive.Estimate.Microservice.Domain;
 using GtMotive.Estimate.Microservice.Domain.Interfaces;
 using MongoDB.Driver;
 
@@ -12,10 +13,27 @@ namespace GtMotive.Estimate.Microservice.Infrastructure.MongoDb
     /// <param name="mongoService">Mongo service.</param>
     public sealed class MongoUnitOfWork(MongoService mongoService) : IUnitOfWork, IDisposable
     {
+        private const int WriteConflictCode = 112;
+
         private readonly MongoService _mongoService = mongoService;
         private IClientSessionHandle _session;
         private int _pendingWrites;
         private bool _disposed;
+
+        /// <summary>
+        /// Checks whether MongoDB aborted the transaction because another transaction wrote the same key or document.
+        /// </summary>
+        /// <param name="exception">MongoDB exception.</param>
+        /// <returns>True for a write conflict.</returns>
+        public static bool IsWriteConflict(MongoException exception)
+        {
+            return exception switch
+            {
+                MongoCommandException command => command.Code == WriteConflictCode,
+                MongoWriteException write => write.WriteError?.Code == WriteConflictCode,
+                _ => false,
+            };
+        }
 
         public async Task<IClientSessionHandle> GetSessionForWrite()
         {
@@ -42,7 +60,14 @@ namespace GtMotive.Estimate.Microservice.Infrastructure.MongoDb
                 return 0;
             }
 
-            await _session.CommitTransactionAsync();
+            try
+            {
+                await _session.CommitTransactionAsync();
+            }
+            catch (MongoException ex) when (IsWriteConflict(ex))
+            {
+                throw new ConcurrencyConflictException("The changes conflict with another request. Retry the request.", ex);
+            }
 
             var writes = _pendingWrites;
             _pendingWrites = 0;

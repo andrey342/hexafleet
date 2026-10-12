@@ -16,6 +16,7 @@ namespace GtMotive.Estimate.Microservice.Domain.Rentals
         /// <returns>Task.</returns>
         /// <exception cref="VehicleNotAvailableException">The vehicle already has an active rental.</exception>
         /// <exception cref="CustomerAlreadyHasRentalException">The customer already has an active rental.</exception>
+        /// <exception cref="ConcurrencyConflictException">Another request is renting the same vehicle or customer.</exception>
         Task Add(Rental rental);
 
         /// <summary>
@@ -50,6 +51,8 @@ namespace GtMotive.Estimate.Microservice.Domain.Rentals
         /// </summary>
         /// <param name="rental">Rental to update.</param>
         /// <returns>Task.</returns>
+        /// <exception cref="RentalAlreadyReturnedException">The rental was returned by another request.</exception>
+        /// <exception cref="ConcurrencyConflictException">Another request is returning the same rental.</exception>
         Task Update(Rental rental);
     }
 }

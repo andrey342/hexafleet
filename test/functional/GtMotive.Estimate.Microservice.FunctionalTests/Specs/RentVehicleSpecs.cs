@@ -67,6 +67,25 @@ namespace GtMotive.Estimate.Microservice.FunctionalTests.Specs
         }
 
         [Fact]
+        public async Task Concurrent_rentals_for_the_same_customer_create_one_rental_and_return_409_to_the_rest()
+        {
+            var vehicleIds = new List<Guid>();
+            for (var i = 0; i < 10; i++)
+            {
+                vehicleIds.Add(await CreateVehicle($"CONC{i:000}"));
+            }
+
+            var results = await Task.WhenAll(vehicleIds.Select(vehicleId => Send(new RentVehicleRequest { VehicleId = vehicleId, CustomerId = Customer })));
+
+            results.Count(result => result is ObjectResult { StatusCode: StatusCodes.Status201Created }).Should().Be(1);
+            results.Count(result => result is ConflictObjectResult).Should().Be(vehicleIds.Count - 1);
+
+            Rental active = null;
+            await Fixture.UsingRepository<IRentalRepository>(async repository => active = await repository.GetActiveByCustomer(new CustomerId(Customer)));
+            active.Should().NotBeNull();
+        }
+
+        [Fact]
         public async Task Returning_a_vehicle_closes_the_rental_and_makes_the_vehicle_available_again()
         {
             var vehicleId = await CreateVehicle("1234ABC");

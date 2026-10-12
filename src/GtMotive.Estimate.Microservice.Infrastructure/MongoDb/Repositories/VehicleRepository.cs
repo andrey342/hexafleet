@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using GtMotive.Estimate.Microservice.Domain;
 using GtMotive.Estimate.Microservice.Domain.Vehicles;
 using GtMotive.Estimate.Microservice.Infrastructure.MongoDb.Documents;
 using GtMotive.Estimate.Microservice.Infrastructure.MongoDb.Indexes;
@@ -28,6 +29,10 @@ namespace GtMotive.Estimate.Microservice.Infrastructure.MongoDb.Repositories
             catch (MongoWriteException ex) when (MongoIndexes.IsDuplicateKey(ex, MongoIndexes.VehicleLicensePlate))
             {
                 throw new LicensePlateAlreadyRegisteredException($"The license plate {vehicle.LicensePlate} is already registered.", ex);
+            }
+            catch (MongoException ex) when (MongoUnitOfWork.IsWriteConflict(ex))
+            {
+                throw new ConcurrencyConflictException($"The license plate {vehicle.LicensePlate} is being registered by another request. Retry the request.", ex);
             }
         }
 

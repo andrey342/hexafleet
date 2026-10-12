@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
+using GtMotive.Estimate.Microservice.Domain;
 using GtMotive.Estimate.Microservice.Domain.Interfaces;
 using GtMotive.Estimate.Microservice.Domain.Rentals;
 using GtMotive.Estimate.Microservice.Domain.Vehicles;
@@ -59,6 +60,10 @@ namespace GtMotive.Estimate.Microservice.ApplicationCore.UseCases.RentVehicle
             catch (CustomerAlreadyHasRentalException activeRentalEx)
             {
                 _outputPort.ConflictHandle(activeRentalEx.Message);
+            }
+            catch (ConcurrencyConflictException concurrencyEx)
+            {
+                _outputPort.ConflictHandle(concurrencyEx.Message);
             }
         }
     }

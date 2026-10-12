@@ -3,43 +3,64 @@ using System.Diagnostics;
 using System.Threading.Tasks;
 using GtMotive.Estimate.Microservice.Api;
 using GtMotive.Estimate.Microservice.Infrastructure;
+using GtMotive.Estimate.Microservice.Infrastructure.MongoDb.Settings;
 using MediatR;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Testcontainers.MongoDb;
 using Xunit;
 
 [assembly: CLSCompliant(false)]
 
 namespace GtMotive.Estimate.Microservice.FunctionalTests.Infrastructure
 {
-    internal sealed class CompositionRootTestFixture : IDisposable, IAsyncLifetime
+    public sealed class CompositionRootTestFixture : IDisposable, IAsyncLifetime
     {
-        private readonly ServiceProvider _serviceProvider;
+        private MongoDbContainer _mongoDbContainer;
+        private ServiceProvider _serviceProvider;
 
         public CompositionRootTestFixture()
         {
-            var configuration = new ConfigurationBuilder()
+            Configuration = new ConfigurationBuilder()
                 .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
                 .AddEnvironmentVariables()
                 .Build();
-
-            var services = new ServiceCollection();
-            Configuration = configuration;
-            ConfigureServices(services);
-            services.AddSingleton<IConfiguration>(configuration);
-            _serviceProvider = services.BuildServiceProvider();
         }
 
         public IConfiguration Configuration { get; }
 
         public async Task InitializeAsync()
         {
-            await Task.CompletedTask;
+            // MongoDb__ConnectionString points the tests to an existing server, for example the one in docker-compose.
+            var connectionString = Configuration.GetValue<string>("MongoDb:ConnectionString");
+
+            if (string.IsNullOrWhiteSpace(connectionString))
+            {
+                _mongoDbContainer = new MongoDbBuilder("mongo:7")
+                    .WithReplicaSet()
+                    .Build();
+
+                await _mongoDbContainer.StartAsync();
+                connectionString = _mongoDbContainer.GetConnectionString();
+            }
+
+            var services = new ServiceCollection();
+            ConfigureServices(services, connectionString, Configuration.GetValue<string>("MongoDb:MongoDbDatabaseName"));
+            services.AddSingleton(Configuration);
+            _serviceProvider = services.BuildServiceProvider();
         }
 
         public async Task DisposeAsync()
         {
-            await Task.CompletedTask;
+            if (_serviceProvider is not null)
+            {
+                await _serviceProvider.DisposeAsync();
+            }
+
+            if (_mongoDbContainer is not null)
+            {
+                await _mongoDbContainer.DisposeAsync();
+            }
         }
 
         public async Task UsingHandlerForRequest<TRequest>(Func<IRequestHandler<TRequest, Unit>, Task> handlerAction)
@@ -86,14 +107,20 @@ namespace GtMotive.Estimate.Microservice.FunctionalTests.Infrastructure
 
         public void Dispose()
         {
-            _serviceProvider.Dispose();
+            _serviceProvider?.Dispose();
         }
 
-        private static void ConfigureServices(IServiceCollection services)
+        private static void ConfigureServices(IServiceCollection services, string connectionString, string databaseName)
         {
+            services.Configure<MongoDbSettings>(options =>
+            {
+                options.ConnectionString = connectionString;
+                options.MongoDbDatabaseName = databaseName;
+            });
+
             services.AddApiDependencies();
             services.AddLogging();
-            services.AddBaseInfrastructure(true);
+            services.AddBaseInfrastructure(true).AddMongoDb();
         }
     }
 }

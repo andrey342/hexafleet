@@ -1,3 +1,168 @@
+# Vehicle fleet microservice
+
+REST service for the fleet of a vehicle renting company: register vehicles, list the ones available, rent a vehicle and return it. It is built on the hexagonal architecture template documented below, with .NET 9 and MongoDB.
+
+## Quick start
+
+Requires Docker Desktop.
+
+```bash
+docker compose up --build
+```
+
+- Swagger: http://localhost:8080/swagger
+- Health: http://localhost:8080/health
+
+The first build takes a few minutes, most of it downloading images and packages. Later starts take about 15 seconds: the API waits until MongoDB has elected a primary.
+
+If port 8080 is taken, publish the API on another port:
+
+```bash
+API_PORT=18080 docker compose up --build
+```
+
+Stop and remove the containers and the data volume:
+
+```bash
+docker compose down -v
+```
+
+### Running from the SDK (optional)
+
+Requires the .NET SDK 9.0.200 or later (`global.json` rolls forward within .NET 9). Start only MongoDB from the compose file and run the host:
+
+```bash
+docker compose up -d --wait mongo
+dotnet run --project src/GtMotive.Estimate.Microservice.Host
+```
+
+The API listens on http://localhost:5000 and uses `mongodb://localhost:27017/?directConnection=true` from `appsettings.json`.
+
+## API
+
+| Method | Route | Body | Responses |
+|---|---|---|---|
+| `POST` | `/api/vehicles` | `{ "licensePlate": "1234 ABC", "brand": "Seat", "model": "Leon", "manufacturingDate": "2024-03-15" }` | 201 vehicle + `Location`; 400 invalid model; 409 license plate already registered; 422 older than five years |
+| `GET` | `/api/vehicles/available` | | 200 vehicles that are not rented and within the age limit |
+| `GET` | `/api/vehicles/{id}` | | 200 vehicle; 404 |
+| `POST` | `/api/rentals` | `{ "vehicleId": "{id}", "customerId": "12345678A" }` | 201 rental; 400 invalid model; 404 vehicle not found; 409 vehicle rented or customer with an active rental; 422 vehicle older than five years |
+| `POST` | `/api/rentals/{rentalId}/return` | | 200 rental with `returnedAt`; 404; 409 already returned |
+| `GET` | `/health` | | 200 Healthy; 503 when MongoDB does not answer |
+
+License plates keep 4 to 10 letters or digits and customer ids (identity document) 5 to 20; both are stored in upper case without spaces or hyphens. Errors are returned as `ProblemDetails`.
+
+### Walkthrough
+
+Replace `{vehicleId}` and `{rentalId}` with the ids returned by the previous calls.
+
+```bash
+# 201 Created, Location: /api/vehicles/{vehicleId}
+curl -i -X POST http://localhost:8080/api/vehicles -H "Content-Type: application/json" -d '{"licensePlate":"1234 ABC","brand":"Seat","model":"Leon","manufacturingDate":"2024-03-15"}'
+
+# 201 Created, another vehicle
+curl -i -X POST http://localhost:8080/api/vehicles -H "Content-Type: application/json" -d '{"licensePlate":"5678-DEF","brand":"Kia","model":"Ceed","manufacturingDate":"2025-01-20"}'
+
+# 200 OK
+curl -i http://localhost:8080/api/vehicles/{vehicleId}
+
+# 200 OK, both vehicles
+curl -i http://localhost:8080/api/vehicles/available
+
+# 201 Created, returns the rental id
+curl -i -X POST http://localhost:8080/api/rentals -H "Content-Type: application/json" -d '{"vehicleId":"{vehicleId}","customerId":"12345678A"}'
+
+# 409 Conflict, the customer already has an active rental (use the id of the second vehicle)
+curl -i -X POST http://localhost:8080/api/rentals -H "Content-Type: application/json" -d '{"vehicleId":"{secondVehicleId}","customerId":"12345678A"}'
+
+# 200 OK, only the second vehicle
+curl -i http://localhost:8080/api/vehicles/available
+
+# 200 OK, returnedAt is set
+curl -i -X POST http://localhost:8080/api/rentals/{rentalId}/return
+
+# 409 Conflict, already returned
+curl -i -X POST http://localhost:8080/api/rentals/{rentalId}/return
+
+# 200 OK, both vehicles again
+curl -i http://localhost:8080/api/vehicles/available
+
+# 422 Unprocessable Entity, older than five years
+curl -i -X POST http://localhost:8080/api/vehicles -H "Content-Type: application/json" -d '{"licensePlate":"9999ZZZ","brand":"Seat","model":"Toledo","manufacturingDate":"2019-06-01"}'
+```
+
+## Business rules
+
+| Rule | Where it is enforced |
+|---|---|
+| The fleet does not contain vehicles manufactured more than five years ago | `FleetPolicy` (Domain) is the single place for the limit. `Vehicle.Create` rejects the vehicle on registration (422), `RentalService` rejects the rental (422) and the available list filters by the oldest allowed manufacturing date. A manufacturing date in the future is rejected with 400. |
+| A customer cannot have more than one vehicle rented at the same time | `RentalService` checks the active rental of the customer and of the vehicle (409). Two unique partial indexes on `rentals` (`customerId` and `vehicleId` where `returnedAt` is null) keep the rule in the database when two requests arrive at the same time. |
+| A rental is returned once | `Rental.Return` rejects a second return (409). The repository replaces the document filtering by `returnedAt: null`, so a concurrent second return matches nothing and gets the same 409. |
+
+## Architecture
+
+| Layer | Project | Contents |
+|---|---|---|
+| Domain | `GtMotive.Estimate.Microservice.Domain` | `Vehicle` and `Rental` aggregates, value objects, `FleetPolicy`, `RentalService`, repository and factory interfaces, domain exceptions. No dependencies. |
+| Application | `GtMotive.Estimate.Microservice.ApplicationCore` | One folder per use case with its input, output, output port and implementation. Depends on Domain. |
+| Infrastructure | `GtMotive.Estimate.Microservice.Infrastructure` | MongoDB documents, mappers, repositories, unit of work, indexes and the entity factory. |
+| User interface | `GtMotive.Estimate.Microservice.Api` | Controllers, MediatR requests and handlers, presenters and response models. |
+| Host | `GtMotive.Estimate.Microservice.Host` | Composition root: configuration, Serilog, Swagger, health check and the Dockerfile. |
+
+| Pattern | Files |
+|---|---|
+| Use Case + Output Port | `ApplicationCore/UseCases/RentVehicle/RentVehicleUseCase.cs`, `IRentVehicleOutputPort.cs`; ports `IOutputPortStandard`, `IOutputPortNotFound`, `IOutputPortConflict`, `IOutputPortUnprocessable` |
+| Presenter | `Api/UseCases/RentVehicle/RentVehiclePresenter.cs` builds the `IActionResult`; errors through `Api/UseCases/ProblemResults.cs` |
+| Controller + Command (MediatR) | `Api/Controllers/RentalsController.cs` sends `RentVehicleRequest`; `RentVehicleRequestHandler` maps it to the input and returns the presenter |
+| ViewModel | `Api/Models/VehicleResponse.cs`, `Api/Models/RentalResponse.cs` |
+| Value Object | `Domain/Vehicles/VehicleId.cs`, `LicensePlate.cs`, `ManufacturingDate.cs`, `Domain/Rentals/RentalId.cs`, `CustomerId.cs` |
+| Entity / Aggregate Root | `Domain/Vehicles/Vehicle.cs`, `Domain/Rentals/Rental.cs` |
+| Repository | `Domain/Vehicles/IVehicleRepository.cs`, `Infrastructure/MongoDb/Repositories/VehicleRepository.cs` and the rental pair |
+| Domain Service | `Domain/Rentals/RentalService.cs` |
+| Entity Factory | `Domain/Vehicles/IVehicleFactory.cs`, `Domain/Rentals/IRentalFactory.cs`, `Infrastructure/EntityFactory.cs` |
+| Unit of Work | `Domain/Interfaces/IUnitOfWork.cs`, `Infrastructure/MongoDb/MongoUnitOfWork.cs` |
+
+A rental request goes `RentalsController` → MediatR → `RentVehicleRequestHandler` → `RentVehicleUseCase` → `RentalService` + repositories → `IUnitOfWork.Save()` → `RentVehiclePresenter` → HTTP response.
+
+## Design decisions
+
+- **MongoDB.** The template already wires the driver and settings, and a container in the compose file keeps the service runnable without external dependencies.
+- **Two aggregates, no "rented" flag on the vehicle.** Availability comes from the existence of an active `Rental`. Each operation writes a single document and the unique partial indexes protect the rules.
+- **Unit of work with MongoDB transactions.** `MongoUnitOfWork` opens a session and a transaction with the first write of the request; `Save()` commits it and disposing the scope without saving aborts it. Use cases call `Save()`, domain services do not, as the template describes. Transactions require a replica set, so MongoDB runs as a single-node replica set in the compose file and in the tests.
+- **Concurrency.** Duplicate keys on the partial indexes are translated to the domain exceptions and end in 409. If two transactions for the same customer are open at the same time, MongoDB reports a write conflict instead of a duplicate key and the second request gets a 500 that the client can retry; retrying the transaction automatically is left as an improvement.
+- **Entity factory for new entities only.** `EntityFactory` creates ids and applies `Vehicle.Create`; the repositories rebuild entities from documents through the constructors without the age check.
+- **Clock.** Use cases receive `TimeProvider` and pass `DateTime` values to the domain, which never reads the system clock. Unit tests use a fixed provider.
+- **HTTP errors.** 400 for model validation and invalid value objects (`BusinessExceptionFilter`), 404 for missing resources, 409 for conflicts with the current state, 422 for vehicles outside the age policy. All of them return `ProblemDetails`.
+- **Authentication.** Out of scope. Authorization is still registered in the pipeline so endpoints can be protected later without touching the template wiring.
+
+## Tests
+
+| Type | Project | What the example covers | Command |
+|---|---|---|---|
+| Unit | `test/unit/GtMotive.Estimate.Microservice.UnitTests` | Five-year boundary, future dates and normalization in `Vehicle`; `Rental` returns; `RentalService` and `RentVehicleUseCase` with Moq (output port called, `Save()` only on success) | `dotnet test test/unit/GtMotive.Estimate.Microservice.UnitTests` |
+| Infrastructure | `test/infrastructure/GtMotive.Estimate.Microservice.InfrastructureTests` | Host level with `TestServer` and the template `Startup`: model binding and validation of `POST /api/vehicles`, with the MediatR handler replaced by a stub | `dotnet test test/infrastructure/GtMotive.Estimate.Microservice.InfrastructureTests` |
+| Functional | `test/functional/GtMotive.Estimate.Microservice.FunctionalTests` | Handlers, use cases and MongoDB repositories through the composition root, without the host: creation, rental, single active rental (also at index level) and returns | `dotnet test test/functional/GtMotive.Estimate.Microservice.FunctionalTests` |
+
+Run everything with `dotnet test src/microservice.sln`. The functional tests start a MongoDB replica set with Testcontainers, so Docker must be running. To use the MongoDB of the compose file instead:
+
+```bash
+docker compose up -d --wait mongo
+MongoDb__ConnectionString="mongodb://localhost:27017/?directConnection=true" dotnet test test/functional/GtMotive.Estimate.Microservice.FunctionalTests
+```
+
+## Changes to the template
+
+- `global.json` rolls forward to any .NET 9 feature band; the template pinned SDK 9.0.200 with roll forward disabled.
+- Package pins updated to 9.0.x for the hosting and test packages, and MongoDB.Driver to 3.12.0, which removes vulnerable transitive dependencies.
+- Key Vault, IdentityServer and Application Insights removed from the host so it runs locally without Azure or an identity server.
+- AutoMapper removed: it was unused and version 14.0.0 fails the restore with NU1903 (known vulnerability) because warnings are errors.
+- Dockerfile rewritten as a multi-stage build that only uses nuget.org; the original one needed a private Azure DevOps feed.
+- `test/.editorconfig` turns off CA1515 (xUnit needs public test classes) and CA1707 (test names use underscores).
+- The infrastructure tests reference `Microsoft.AspNetCore.TestHost` 9.0.3 directly: `Acheve.TestHost` brings version 8, which fails to write JSON responses on ASP.NET Core 9.
+
+---
+
+The original documentation of the template follows.
+
 # Sample Implementation of Hexagonal Architecture in a Microservice
 ## Index
 ### [Introduction](#introduction)

@@ -101,6 +101,7 @@
         <PackageReference Update="Microsoft.Extensions.Logging.Console" Version="9.0.3" />
         <PackageReference Update="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="9.0.3" />
         <PackageReference Update="Respawn" Version="6.2.1" />
+        <PackageReference Update="Testcontainers.MongoDb" Version="4.16.0" />
         <PackageReference Update="Moq" Version="4.20.72" />
 
         <!-- DbUp -->

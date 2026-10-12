@@ -1,5 +1,7 @@
 ﻿using System;
+using System.IO;
 using System.Reflection;
+using GtMotive.Estimate.Microservice.Api;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -25,6 +27,13 @@ namespace GtMotive.Estimate.Microservice.Host.DependencyInjection
                         Title = $"{AssemblyName} API",
                         Version = $"v{AssemblyVersion}",
                     });
+
+                    var apiXmlComments = Path.Combine(AppContext.BaseDirectory, $"{typeof(ApiConfiguration).Assembly.GetName().Name}.xml");
+
+                    if (File.Exists(apiXmlComments))
+                    {
+                        options.IncludeXmlComments(apiXmlComments);
+                    }
                 });
 
             return services;

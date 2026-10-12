@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+**/*.user
+**/*.local.*
+.git/
+.vs/
+.vscode/
+.idea/
+test/
+docker-compose*.yml
+.dockerignore

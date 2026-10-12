@@ -15,6 +15,7 @@ namespace GtMotive.Estimate.Microservice.Api.UseCases.RentVehicle
         /// <summary>
         /// Gets or sets the identity document of the customer. Spaces and hyphens are removed.
         /// </summary>
+        /// <example>12345678A</example>
         [Required]
         [StringLength(30)]
         public string CustomerId { get; set; }

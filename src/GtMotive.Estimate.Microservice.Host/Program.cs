@@ -3,6 +3,7 @@ using System.Globalization;
 using GtMotive.Estimate.Microservice.Api;
 using GtMotive.Estimate.Microservice.Host.DependencyInjection;
 using GtMotive.Estimate.Microservice.Infrastructure;
+using GtMotive.Estimate.Microservice.Infrastructure.MongoDb;
 using GtMotive.Estimate.Microservice.Infrastructure.MongoDb.Settings;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -36,16 +37,21 @@ Log.Logger = new LoggerConfiguration()
 builder.Host.UseSerilog();
 
 // Add services to the container.
-builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
 
 builder.Services.Configure<MongoDbSettings>(builder.Configuration.GetSection("MongoDb"));
 
 builder.Services.AddControllers(ApiConfiguration.ConfigureControllers)
     .WithApiControllers();
 
-builder.Services.AddBaseInfrastructure(builder.Environment.IsDevelopment());
+builder.Services.AddBaseInfrastructure(builder.Environment.IsDevelopment())
+    .AddMongoDb();
+
+builder.Services.AddHealthChecks()
+    .AddMongoDb(
+        sp => sp.GetRequiredService<MongoService>().Database,
+        name: "mongodb",
+        timeout: TimeSpan.FromSeconds(5));
 
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
@@ -102,5 +108,6 @@ app.UseSwaggerInApplication(pathBase, builder.Configuration);
 app.UseRouting();
 app.UseAuthorization();
 app.MapControllers();
+app.MapHealthChecks("/health");
 
 await app.RunAsync();

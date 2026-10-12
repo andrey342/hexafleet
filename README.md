@@ -130,8 +130,8 @@ A rental request goes `RentalsController` → MediatR → `RentVehicleRequestHan
 - **Unit of work with MongoDB transactions.** `MongoUnitOfWork` opens a session and a transaction with the first write of the request; `Save()` commits it and disposing the scope without saving aborts it. Use cases call `Save()`, domain services do not, as the template describes. Transactions require a replica set, so MongoDB runs as a single-node replica set in the compose file and in the tests.
 - **Concurrency.** Duplicate keys on the partial indexes are translated to the domain exceptions and end in 409. If two transactions for the same customer are open at the same time, MongoDB reports a write conflict instead of a duplicate key and the second request gets a 500 that the client can retry; retrying the transaction automatically is left as an improvement.
 - **Entity factory for new entities only.** `EntityFactory` creates ids and applies `Vehicle.Create`; the repositories rebuild entities from documents through the constructors without the age check.
-- **Clock.** Use cases receive `TimeProvider` and pass `DateTime` values to the domain, which never reads the system clock. Unit tests use a fixed provider.
-- **HTTP errors.** 400 for model validation and invalid value objects (`BusinessExceptionFilter`), 404 for missing resources, 409 for conflicts with the current state, 422 for vehicles outside the age policy. All of them return `ProblemDetails`.
+- **Clock.** Use cases receive `TimeProvider` and pass `DateTime` values to the domain, which never reads the system clock. Unit tests use a fixed provider. `Rental` truncates its dates to milliseconds, the precision MongoDB stores, so the response of a rental matches what is read back later.
+- **HTTP errors.** 400 for model validation and invalid value objects (`BusinessExceptionFilter`), 404 for missing resources, 409 for conflicts with the current state, 422 for vehicles outside the age policy. All of them return `ProblemDetails`; `ProblemDetailsResultFilter` adds `instance` and `traceId` to every one.
 - **Authentication.** Out of scope. Authorization is still registered in the pipeline so endpoints can be protected later without touching the template wiring.
 
 ## Tests
@@ -153,10 +153,10 @@ MongoDb__ConnectionString="mongodb://localhost:27017/?directConnection=true" dot
 
 - `global.json` rolls forward to any .NET 9 feature band; the template pinned SDK 9.0.200 with roll forward disabled.
 - Package pins updated to 9.0.x for the hosting and test packages, and MongoDB.Driver to 3.12.0, which removes vulnerable transitive dependencies.
-- Key Vault, IdentityServer and Application Insights removed from the host so it runs locally without Azure or an identity server.
+- Key Vault, IdentityServer and Application Insights removed from the host so it runs locally without Azure or an identity server. This deletes `Host/Configuration/AppSettings.cs`, which only held the JWT authority, and `Host/Infrastructure/Swagger/IdentityServerApiSecurityOperationFilter.cs`, which added the OAuth2 requirement and the 401/403 responses to endpoints with `[Authorize]`. `SwaggerExtensions.cs` no longer defines the OAuth2 scheme against the identity server, and the two `SA1010` suppressions for the filter are gone from the host `GlobalSuppressions.cs`. Authorization is still registered in the pipeline.
 - AutoMapper removed: it was unused and version 14.0.0 fails the restore with NU1903 (known vulnerability) because warnings are errors.
 - Dockerfile rewritten as a multi-stage build that only uses nuget.org; the original one needed a private Azure DevOps feed.
-- `test/.editorconfig` turns off CA1515 (xUnit needs public test classes) and CA1707 (test names use underscores).
+- `test/.editorconfig` turns off CA1515 (xUnit needs public test classes) and CA1707 (test names use underscores) for all the test projects. It replaces `GlobalSuppressions.cs` in `FunctionalTests` and `InfrastructureTests`, which only suppressed CA1515 for one collection fixture each.
 - The infrastructure tests reference `Microsoft.AspNetCore.TestHost` 9.0.3 directly: `Acheve.TestHost` brings version 8, which fails to write JSON responses on ASP.NET Core 9.
 
 ---

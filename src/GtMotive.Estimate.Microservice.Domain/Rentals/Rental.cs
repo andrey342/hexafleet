@@ -4,7 +4,8 @@ using GtMotive.Estimate.Microservice.Domain.Vehicles;
 namespace GtMotive.Estimate.Microservice.Domain.Rentals
 {
     /// <summary>
-    /// Rental of a vehicle by a customer. Aggregate root.
+    /// Rental of a vehicle by a customer. Aggregate root. Dates are kept to the millisecond, the precision of the store,
+    /// so a rental reads the same before and after it is saved.
     /// </summary>
     public sealed class Rental
     {
@@ -18,7 +19,10 @@ namespace GtMotive.Estimate.Microservice.Domain.Rentals
         /// <param name="returnedAt">UTC date and time the vehicle was returned, or null while the rental is active.</param>
         public Rental(RentalId id, VehicleId vehicleId, CustomerId customerId, DateTime startedAt, DateTime? returnedAt)
         {
-            if (returnedAt < startedAt)
+            var start = TruncateToMilliseconds(startedAt);
+            var end = returnedAt is null ? (DateTime?)null : TruncateToMilliseconds(returnedAt.Value);
+
+            if (end < start)
             {
                 throw new DomainException("The return date cannot be earlier than the start date.");
             }
@@ -26,8 +30,8 @@ namespace GtMotive.Estimate.Microservice.Domain.Rentals
             Id = id;
             VehicleId = vehicleId;
             CustomerId = customerId;
-            StartedAt = startedAt;
-            ReturnedAt = returnedAt;
+            StartedAt = start;
+            ReturnedAt = end;
         }
 
         /// <summary>
@@ -72,12 +76,19 @@ namespace GtMotive.Estimate.Microservice.Domain.Rentals
                 throw new RentalAlreadyReturnedException($"The rental {Id} has already been returned.");
             }
 
-            if (now < StartedAt)
+            var returnedAt = TruncateToMilliseconds(now);
+
+            if (returnedAt < StartedAt)
             {
                 throw new DomainException("The return date cannot be earlier than the start date.");
             }
 
-            ReturnedAt = now;
+            ReturnedAt = returnedAt;
+        }
+
+        private static DateTime TruncateToMilliseconds(DateTime value)
+        {
+            return new DateTime(value.Ticks - (value.Ticks % TimeSpan.TicksPerMillisecond), value.Kind);
         }
     }
 }

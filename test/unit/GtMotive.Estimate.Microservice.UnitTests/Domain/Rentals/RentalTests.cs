@@ -33,6 +33,18 @@ namespace GtMotive.Estimate.Microservice.UnitTests.Domain.Rentals
         }
 
         [Fact]
+        public void Dates_are_truncated_to_milliseconds()
+        {
+            var subMillisecond = TimeSpan.FromTicks(1234);
+            var rental = new Rental(RentalId.New(), VehicleId.New(), new CustomerId("12345678A"), StartedAt.AddMilliseconds(5).Add(subMillisecond), null);
+
+            rental.Return(StartedAt.AddDays(1).Add(subMillisecond));
+
+            rental.StartedAt.Should().Be(StartedAt.AddMilliseconds(5));
+            rental.ReturnedAt.Should().Be(StartedAt.AddDays(1));
+        }
+
+        [Fact]
         public void Return_rejects_a_rental_that_was_already_returned()
         {
             var rental = ActiveRental();

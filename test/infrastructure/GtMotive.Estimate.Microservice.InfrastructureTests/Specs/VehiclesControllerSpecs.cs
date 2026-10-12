@@ -35,6 +35,8 @@ namespace GtMotive.Estimate.Microservice.InfrastructureTests.Specs
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             var problem = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>();
             problem.Errors.Should().ContainKey("LicensePlate");
+            problem.Instance.Should().Be("/api/vehicles");
+            problem.Extensions.Should().ContainKey("traceId");
         }
 
         [Fact]

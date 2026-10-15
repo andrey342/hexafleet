@@ -1,3 +1,5 @@
+![HexaFleet: fleet microservice in .NET 9 on hexagonal architecture and DDD](.github/assets/banner.png)
+
 # HexaFleet
 
 [![CI](https://github.com/andrey342/hexafleet/actions/workflows/ci.yml/badge.svg)](https://github.com/andrey342/hexafleet/actions/workflows/ci.yml)

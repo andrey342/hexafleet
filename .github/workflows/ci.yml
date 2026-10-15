@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out with CRLF line endings
+        run: git config --global core.autocrlf true
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore src/microservice.sln
+
+      - name: Build
+        run: dotnet build src/microservice.sln --no-restore --configuration Release
+
+      - name: Format
+        run: dotnet format src/microservice.sln --no-restore --verify-no-changes
+
+      - name: Test
+        run: dotnet test src/microservice.sln --no-build --configuration Release

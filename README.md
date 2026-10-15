@@ -1,6 +1,22 @@
-# Vehicle fleet microservice
+# HexaFleet
+
+[![CI](https://github.com/andrey342/hexafleet/actions/workflows/ci.yml/badge.svg)](https://github.com/andrey342/hexafleet/actions/workflows/ci.yml)
+![.NET 9](https://img.shields.io/badge/.NET-9.0-512BD4?logo=dotnet&logoColor=white)
+![MongoDB](https://img.shields.io/badge/MongoDB-replica%20set-47A248?logo=mongodb&logoColor=white)
+![Docker Compose](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
+![Architecture](https://img.shields.io/badge/architecture-hexagonal%20%2B%20DDD-555555)
 
 REST service for the fleet of a vehicle renting company: register vehicles, list the ones available, rent a vehicle and return it. It is built on the hexagonal architecture template documented below, with .NET 9 and MongoDB.
+
+Written as a .NET technical test for GT Motive. The folder and project structure is the one of the template; the work is in the domain model, the use cases, the MongoDB adapters and the tests.
+
+| | |
+|---|---|
+| **Domain** | `Vehicle` and `Rental` aggregates, value objects, domain service and policy, no dependencies |
+| **Use cases** | Input, output and output port per use case; presenters build the HTTP response |
+| **Persistence** | MongoDB with transactions through a unit of work and unique partial indexes for the business rules |
+| **Tests** | Unit (xUnit + Moq), host level with `TestServer`, functional against a MongoDB replica set in Testcontainers |
+| **Runs with** | `docker compose up --build` |
 
 ## Quick start
 
@@ -120,6 +136,31 @@ curl -i -X POST http://localhost:8080/api/vehicles -H "Content-Type: application
 | Domain Service | `Domain/Rentals/RentalService.cs` |
 | Entity Factory | `Domain/Vehicles/IVehicleFactory.cs`, `Domain/Rentals/IRentalFactory.cs`, `Infrastructure/EntityFactory.cs` |
 | Unit of Work | `Domain/Interfaces/IUnitOfWork.cs`, `Infrastructure/MongoDb/MongoUnitOfWork.cs` |
+
+```mermaid
+flowchart LR
+    client([Client]) -->|HTTP| api
+    subgraph api [Api]
+        controller[RentalsController] --> handler[RentVehicleRequestHandler]
+        presenter[RentVehiclePresenter]
+    end
+    subgraph app [ApplicationCore]
+        usecase[RentVehicleUseCase]
+    end
+    subgraph domain [Domain]
+        service[RentalService]
+        ports[[Repositories and IUnitOfWork]]
+    end
+    subgraph infra [Infrastructure]
+        adapters[Mongo repositories and MongoUnitOfWork]
+    end
+    handler --> usecase
+    usecase --> service
+    usecase --> ports
+    usecase -->|output port| presenter
+    adapters -.->|implements| ports
+    adapters --> mongo[(MongoDB)]
+```
 
 A rental request goes `RentalsController` → MediatR → `RentVehicleRequestHandler` → `RentVehicleUseCase` → `RentalService` + repositories → `IUnitOfWork.Save()` → `RentVehiclePresenter` → HTTP response.
 
